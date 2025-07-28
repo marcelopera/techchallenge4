@@ -25,9 +25,6 @@ flask --app stock_api.py run --host=0.0.0.0 --port=5000
 
 # 5. Fazer previsões
 curl http://localhost:5000/predict/AAPL?days=5
-
-# 6. Atualização diária (crontab)
-python stock_daily_loader.py
 ```
 
 ## 🏗️ Arquitetura
