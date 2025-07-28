@@ -319,12 +319,13 @@ sum(rate(flask_http_requests_total{status=~"5.."}[5m])) / sum(rate(flask_http_re
 
 ```yaml
 # prometheus.yml
+global:
+  scrape_interval: 15s
+
 scrape_configs:
-  - job_name: 'stock-prediction-api'
+  - job_name: 'stock-predictor'
     static_configs:
-      - targets: ['localhost:5000']
-    metrics_path: '/metrics'
-    scrape_interval: 5s
+      - targets: ['stock-api:5000']
 ```
 
 ## Estrutura de Arquivos
