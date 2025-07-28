@@ -70,8 +70,6 @@ gunicorn --config gunicorn.conf.py app:app
         
         Admin->>API: python app.py
         activate API
-        API->>API: Warm-up TensorFlow
-        API->>Models: Pré-carregar modelos comuns
         Note right of API: API ativa com cache<br/>de modelos em memória
         
         Prometheus->>API: GET /metrics (scrape)
@@ -107,8 +105,6 @@ gunicorn --config gunicorn.conf.py app:app
         API-->>Client: Previsões + resumo
         deactivate API
         
-        Note over Admin, Prometheus: MONITORAMENTO CONTÍNUO
-        Note right of Prometheus: Métricas coletadas:<br/>- Taxa de requisições<br/>- Latência (P95, P99)<br/>- Erros de predição<br/>- Uso de CPU/memória<br/>- Modelos carregados
 ```
 
 ### Tickers Suportados (Padrão)
