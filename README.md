@@ -1,17 +1,19 @@
 # Sistema de Previsão de Ações com LSTM
 
-Um sistema completo para coletar dados de ações, treinar modelos de previsão usando LSTM (Long Short-Term Memory) e servir previsões através de uma API REST.
+Um sistema completo para coletar dados de ações, treinar modelos de previsão usando LSTM (Long Short-Term Memory) e servir previsões através de uma API REST com monitoramento Prometheus.
 
 ## 📋 Funcionalidades
 
 - **Coleta de Dados**: Download automático de dados históricos de ações usando Yahoo Finance
 - **Treinamento de Modelos**: Modelos LSTM personalizados para cada ticker
 - **API REST**: Endpoints para obter previsões e gerenciar modelos
+- **Predição Manual**: Inserir dados manualmente e obter previsões
+- **Monitoramento**: Métricas Prometheus para tráfego, disponibilidade e saturação
 
 ## 📈 Como rodar localmente
 
 ```bash
-# 1. Instalar as dependencias
+# 1. Instalar as dependências
 pip install -r requirements.txt
 
 # 2. Coletar dados históricos
@@ -20,14 +22,14 @@ python stock_bulk_loader.py
 # 3. Treinar modelos
 python stock_script.py
 
-# 4. Iniciar API
-flask --app stock_api.py run --host=0.0.0.0 --port=5000
+# opção - Rodar via Docker
+docker-compose up -d
 
-# 5. Fazer previsões
-curl http://localhost:5000/predict/AAPL?days=5
+# 4. Subir a API
+gunicorn --config gunicorn.conf.py app:app
 ```
 
-## 🏗️ Arquitetura
+## Arquitetura
 
 ```mermaid
     sequenceDiagram
@@ -37,12 +39,11 @@ curl http://localhost:5000/predict/AAPL?days=5
         participant Storage as Dados Parquet
         participant Script as stock_script.py
         participant Models as Modelos (.keras/.pkl)
-        participant Scheduler as Cron/Scheduler
-        participant Daily as stock_daily_loader.py
-        participant API as stock_api.py
+        participant API as app.py
         participant Client as Cliente/Usuario
+        participant Prometheus as Prometheus
         
-        Note over Admin, Client: FASE 1: CONFIGURAÇÃO INICIAL (Primeira Execução)
+        Note over Admin, Prometheus: CONFIGURAÇÃO INICIAL
         
         Admin->>Bulk: python stock_bulk_loader.py
         activate Bulk
@@ -57,42 +58,26 @@ curl http://localhost:5000/predict/AAPL?days=5
         Storage-->>Script: Dados históricos
         
         loop Para cada ticker (AAPL, MSFT, etc.)
-            Script->>Script: Preparar dados (60 sequências)
+            Script->>Script: Preparar dados (10 sequências)
             Script->>Script: Construir modelo LSTM
-            Script->>Script: Treinar modelo (100 epochs)
+            Script->>Script: Treinar modelo (50 epochs)
             Script->>Script: Avaliar métricas (RMSE, MAE)
             Script->>Models: Salvar modelo treinado<br/>({ticker}_model.keras + data.pkl)
         end
         deactivate Script
         
-        Note over Admin, Client: FASE 2: OPERAÇÃO CONTÍNUA
+        Note over Admin, Prometheus: OPERAÇÃO DA API
         
-        Admin->>API: python stock_api.py
+        Admin->>API: python app.py
         activate API
-        Note right of API: API fica sempre ativa<br/>aguardando requisições
+        API->>API: Warm-up TensorFlow
+        API->>Models: Pré-carregar modelos comuns
+        Note right of API: API ativa com cache<br/>de modelos em memória
         
-        Admin->>Scheduler: Configurar crontab/scheduler
-        activate Scheduler
+        Prometheus->>API: GET /metrics (scrape)
+        API-->>Prometheus: Métricas de sistema<br/>e aplicação
         
-        loop Atualização Diária (Seg-Sex, 18h)
-            Scheduler->>Daily: Executar daily_loader
-            activate Daily
-            Daily->>YF: Download dados do dia
-            YF-->>Daily: Dados mais recentes
-            Daily->>Storage: Atualizar partições
-            deactivate Daily
-        end
-        
-        loop Re-treinamento Semanal (Sáb, 2h)
-            Scheduler->>Script: Re-executar treinamento
-            activate Script
-            Script->>Storage: Carregar dados atualizados
-            Script->>Script: Re-treinar modelos
-            Script->>Models: Atualizar modelos salvos
-            deactivate Script
-        end
-        
-        Note over Admin, Client: FASE 3: CONSUMO DA API
+        Note over Admin, Prometheus: CONSUMO DA API
         
         Client->>API: GET /health
         API-->>Client: Status + modelos carregados
@@ -113,19 +98,17 @@ curl http://localhost:5000/predict/AAPL?days=5
         API-->>Client: JSON com previsões
         deactivate API
         
-        Client->>API: GET /models
-        API-->>Client: Lista de modelos disponíveis
+        Client->>API: POST /predict-manual/AAPL
+        Note right of Client: JSON: {dates: [...], prices: [...]}
+        activate API
+        API->>API: Validar dados de entrada
+        API->>API: Normalizar preços
+        API->>API: Gerar previsões baseadas<br/>nos dados manuais
+        API-->>Client: Previsões + resumo
+        deactivate API
         
-        Note over Admin, Client: CICLO CONTÍNUO
-        Note right of Scheduler: - Daily: Novos dados<br/>- Weekly: Re-treinamento<br/>- API: Sempre disponível<br/>- Cache: Modelos em memória
-```
-
-## 🚀 Instalação
-
-### Dependências
-
-```bash
-pip install -r requirements.txt
+        Note over Admin, Prometheus: MONITORAMENTO CONTÍNUO
+        Note right of Prometheus: Métricas coletadas:<br/>- Taxa de requisições<br/>- Latência (P95, P99)<br/>- Erros de predição<br/>- Uso de CPU/memória<br/>- Modelos carregados
 ```
 
 ### Tickers Suportados (Padrão)
@@ -140,23 +123,17 @@ pip install -r requirements.txt
 - AVGO (Broadcom)
 - TSLA (Tesla)
 
-## 📊 Coleta de Dados
+## Coleta de Dados
 
-### Carregamento Inicial (3 anos de histórico)
+### Carregamento em Lote (3 anos de histórico)
 
 ```bash
 python stock_bulk_loader.py
 ```
 
-### Atualização Diária
+Os dados são salvos em formato Parquet com particionamento por ano/mês/dia para otimizar consultas e análises.
 
-```bash
-python stock_daily_loader.py
-```
-
-Os dados são salvos em formato Parquet com particionamento por ano/mês/dia para otimizar consultas.
-
-## 🤖 Treinamento de Modelos
+## Treinamento de Modelos
 
 ### Treinamento Interativo
 
@@ -172,7 +149,7 @@ O script oferece opções interativas para:
 ### Parâmetros do Modelo
 
 - **Arquitetura**: 3 camadas LSTM (50 neurônios cada) + Dropout (0.2)
-- **Sequência**: 60 dias de histórico para previsão
+- **Sequência**: 10 dias de histórico para previsão (configurável)
 - **Otimizador**: Adam (learning_rate=0.001)
 - **Função de Perda**: Mean Squared Error
 
@@ -180,14 +157,15 @@ O script oferece opções interativas para:
 
 - **MSE** (Mean Squared Error)
 - **MAE** (Mean Absolute Error) 
+- **MAPE** (Mean Absolute Percentage Error)
 - **RMSE** (Root Mean Squared Error)
 
-## 🌐 API REST
+## API REST
 
 ### Iniciar o Servidor
 
 ```bash
-flask --app stock_api.py run --host=0.0.0.0 --port=5000
+gunicorn --config gunicorn.conf.py app:app
 ```
 
 ### Endpoints Disponíveis
@@ -200,12 +178,12 @@ GET /health
 ```json
 {
   "status": "healthy",
-  "timestamp": "2025-05-27 10:30:00",
+  "timestamp": "2025-07-28 15:30:45",
   "loaded_models": ["AAPL", "MSFT"]
 }
 ```
 
-#### 2. Previsão de Ações
+#### 2. Previsão Automática
 ```
 GET /predict/<ticker>?days=5
 ```
@@ -225,23 +203,71 @@ curl http://localhost:5000/predict/AAPL?days=7
   "ticker": "AAPL",
   "predictions": [
     {
-      "date": "2025-05-28",
+      "date": "2025-07-29",
       "predicted_close": 182.45
     },
     {
-      "date": "2025-05-29", 
+      "date": "2025-07-30", 
       "predicted_close": 184.20
     }
   ],
-  "prediction_date": "2025-05-27 10:30:00",
+  "prediction_date": "2025-07-28 15:30:45",
   "model_info": {
-    "sequence_length": 60,
+    "sequence_length": 10,
     "trained_ticker": "AAPL"
   }
 }
 ```
 
-#### 3. Listar Modelos
+#### 3. Previsão Manual
+```
+POST /predict-manual/<ticker>
+Content-Type: application/json
+```
+
+**Body:**
+```json
+{
+  "dates": ["2024-01-15", "2024-01-16", "2024-01-17", "2024-01-18", "2024-01-19", "2024-01-22", "2024-01-23", "2024-01-24", "2024-01-25", "2024-01-26"],
+  "prices": [185.50, 187.20, 189.10, 186.75, 188.90, 190.25, 192.15, 191.80, 193.45, 195.20],
+  "predict_days": 5
+}
+```
+
+**Exemplo:**
+```bash
+curl -X POST http://localhost:5000/predict-manual/AAPL \
+  -H "Content-Type: application/json" \
+  -d '{
+    "dates": ["2024-01-15", "2024-01-16", "2024-01-17", "2024-01-18", "2024-01-19", "2024-01-22", "2024-01-23", "2024-01-24", "2024-01-25", "2024-01-26"],
+    "prices": [185.50, 187.20, 189.10, 186.75, 188.90, 190.25, 192.15, 191.80, 193.45, 195.20],
+    "predict_days": 5
+  }'
+```
+
+**Resposta:**
+```json
+{
+  "ticker": "AAPL",
+  "input_data": [
+    {"date": "2024-01-15", "price": 185.50},
+    {"date": "2024-01-16", "price": 187.20}
+  ],
+  "predictions": [
+    {"date": "2024-01-31", "predicted_close": 198.45},
+    {"date": "2024-02-01", "predicted_close": 199.20}
+  ],
+  "summary": {
+    "last_real_price": 195.20,
+    "first_predicted_price": 198.45,
+    "last_predicted_price": 201.80,
+    "predicted_change": 6.60,
+    "predicted_change_percent": 3.38
+  }
+}
+```
+
+#### 4. Listar Modelos
 ```
 GET /models
 ```
@@ -260,12 +286,52 @@ GET /models
 }
 ```
 
-## 📁 Estrutura de Arquivos
+#### 5. Métricas Prometheus
+```
+GET /metrics
+```
+Retorna métricas no formato Prometheus para monitoramento.
 
-### Modelos Salvos
-Cada modelo gera dois arquivos:
-- `{ticker}_model.keras`: Modelo neural Keras
-- `{ticker}_data.pkl`: Scaler e metadados (joblib)
+## Monitoramento com Prometheus
+
+### Métricas Disponíveis
+
+| Métrica | Tipo | Descrição |
+|---------|------|-----------|
+| `flask_requests_total` | Counter | Total de requisições por endpoint/status |
+| `flask_request_duration_seconds` | Histogram | Duração das requisições |
+| `flask_active_requests` | Gauge | Número de requisições ativas |
+| `flask_memory_usage_bytes` | Gauge | Uso de memória em bytes |
+| `flask_cpu_usage_percent` | Gauge | Uso de CPU em percentual |
+| `flask_loaded_models_total` | Gauge | Número de modelos carregados |
+| `flask_prediction_errors_total` | Counter | Erros de predição por ticker/tipo |
+
+### Consultas PromQL Essenciais
+
+```promql
+# Taxa de requisições por segundo
+rate(flask_http_requests_total[5m])
+
+# Latência P95
+histogram_quantile(0.95, rate(flask_http_request_duration_seconds_bucket[5m]))
+
+# Taxa de erro
+sum(rate(flask_http_requests_total{status=~"5.."}[5m])) / sum(rate(flask_http_requests_total[5m]))
+```
+
+### Configuração Prometheus
+
+```yaml
+# prometheus.yml
+scrape_configs:
+  - job_name: 'stock-prediction-api'
+    static_configs:
+      - targets: ['localhost:5000']
+    metrics_path: '/metrics'
+    scrape_interval: 5s
+```
+
+## Estrutura de Arquivos
 
 ### Dados Particionados
 ```
@@ -277,79 +343,4 @@ dados/
 │   └── month=2/
 ├── year=2023/
 └── year=2024/
-```
-
-## 🔧 Configuração Avançada
-
-### Personalizar Tickers
-
-Edite as listas nos arquivos `stock_bulk_loader.py` e `stock_daily_loader.py`:
-
-```python
-tickers = 'AAPL MSFT NVDA AMZN META GOOG TSLA'  # Seus tickers
-```
-
-### Ajustar Parâmetros do Modelo
-
-No arquivo `stock_predictor.py`, classe `StockPredictor`:
-
-```python
-def __init__(self, sequence_length=60):  # Janela de histórico
-    
-def build_model(self):
-    # Ajustar camadas LSTM, dropout, etc.
-```
-
-### Configurar Diretórios
-
-No arquivo `stock_api.py`:
-
-```python
-prediction_api = StockPredictionAPI(models_dir="meus_modelos")
-```
-
-## ⚠️ Tratamento de Erros
-
-### Erros Comuns
-
-1. **Modelo não encontrado (404)**
-   ```json
-   {
-     "error": "Modelo não encontrado para o ticker XYZ",
-     "message": "Você precisa treinar um modelo para este ticker primeiro"
-   }
-   ```
-
-2. **Dias inválidos (400)**
-   ```json
-   {
-     "error": "Número de dias deve estar entre 1 e 30"
-   }
-   ```
-
-3. **Dados insuficientes**
-   - Mínimo necessário: 65+ registros por ticker (sequence_length + 5)
-
-## 🔄 Automação e Monitoramento
-
-### Crontab para Atualizações
-
-```bash
-# Atualização diária às 18h (após fechamento do mercado)
-0 18 * * 1-5 cd /path/to/project && python stock_daily_loader.py
-
-# Re-treinamento semanal
-0 2 * * 6 cd /path/to/project && python stock_script.py
-```
-
-### Logs e Monitoramento
-
-A API utiliza logging Python padrão. Para logs estruturados:
-
-```python
-import logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
 ```
