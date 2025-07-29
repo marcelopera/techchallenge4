@@ -294,7 +294,7 @@ Retorna métricas no formato Prometheus para monitoramento.
 
 | Métrica | Tipo | Descrição |
 |---------|------|-----------|
-| `flask_http_requests_total` | Counter | Total de requisições por endpoint/status |
+| `flask_http_request_total` | Counter | Total de requisições por endpoint/status |
 | `flask_http_request_duration_seconds` | Histogram | Duração das requisições |
 | `flask_active_requests` | Gauge | Número de requisições ativas |
 | `flask_memory_usage_bytes` | Gauge | Uso de memória em bytes |
@@ -306,13 +306,13 @@ Retorna métricas no formato Prometheus para monitoramento.
 
 ```promql
 # Taxa de requisições por segundo
-rate(flask_http_requests_total[5m])
+rate(flask_http_request_total[5m])
 
 # Latência P95
 histogram_quantile(0.95, rate(flask_http_request_duration_seconds_bucket[5m]))
 
 # Taxa de erro
-sum(rate(flask_http_requests_total{status=~"5.."}[5m])) / sum(rate(flask_http_requests_total[5m]))
+sum(rate(flask_http_request_total{status=~"5.."}[5m])) / sum(rate(flask_http_request_total[5m]))
 ```
 
 ### Configuração Prometheus
