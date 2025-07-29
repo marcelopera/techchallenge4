@@ -118,70 +118,41 @@ class StockPredictor:
     def predict_from_manual_data(self, dates, prices, predict_days=5):
         """
         Faz previsões baseadas em dados inseridos manualmente pelo usuário
-        
-        Args:
-            dates (list): Lista de datas no formato 'YYYY-MM-DD' ou objetos datetime
-            prices (list): Lista de preços correspondentes às datas
-            predict_days (int): Número de dias para prever (padrão: 5)
-            
-        Returns:
-            dict: Dicionário contendo datas previstas e preços previstos
         """
         if not self.is_trained:
             raise ValueError("Modelo não foi treinado ainda!")
         
-        # Validações
         if len(dates) != len(prices):
-            raise ValueError("O número de datas deve ser igual ao número de preços!")
-        
+            raise ValueError("O número de datas deve ser igual ao número de preços!")        
         if len(prices) < self.sequence_length:
-            raise ValueError(f"Necessário pelo menos {self.sequence_length} preços para fazer previsões!")
-        
-        # Converte datas para datetime se necessário
+            raise ValueError(f"Necessário pelo menos {self.sequence_length} preços para fazer previsões!")        
         if isinstance(dates[0], str):
             dates = [datetime.strptime(date, '%Y-%m-%d') for date in dates]
         
-        # Ordena os dados por data
         data_pairs = list(zip(dates, prices))
         data_pairs.sort(key=lambda x: x[0])
         dates, prices = zip(*data_pairs)
-        
-        # Normaliza os preços usando o scaler do modelo
-        prices_array = np.array(prices).reshape(-1, 1)
-        
-        # Para usar o scaler corretamente, precisamos dos dados na mesma escala
-        # Vamos usar apenas os últimos valores para criar a sequência
-        last_prices = prices_array[-self.sequence_length:]
-        
-        # Normaliza usando o scaler já treinado
-        # Nota: Isso assume que os novos dados estão em uma faixa similar aos dados de treinamento
+
+        prices_array = np.array(prices).reshape(-1, 1)        
+        last_prices = prices_array[-self.sequence_length:]        
         scaled_last_prices = self.scaler.transform(last_prices)
-        
-        # Cria a sequência inicial
         current_sequence = scaled_last_prices.flatten()
         
         predictions = []
         prediction_dates = []
         
-        # Gera as próximas datas
         last_date = dates[-1]
         for i in range(1, predict_days + 1):
             next_date = last_date + timedelta(days=i)
             prediction_dates.append(next_date)
         
-        # Faz as previsões
         for _ in range(predict_days):
-            # Reshape para o formato esperado pelo modelo
             sequence_reshaped = current_sequence.reshape(1, self.sequence_length, 1)
-            
-            # Faz a previsão
             pred_scaled = self.model.predict(sequence_reshaped, verbose=0)
-            
-            # Desnormaliza a previsão
+
             pred_price = self.scaler.inverse_transform(pred_scaled)[0][0]
             predictions.append(pred_price)
-            
-            # Atualiza a sequência para a próxima previsão
+
             current_sequence = np.roll(current_sequence, -1)
             current_sequence[-1] = pred_scaled[0][0]
         
@@ -238,14 +209,11 @@ class StockPredictor:
         X, y, _ = self.prepare_data(df, ticker)
         X = X.reshape((X.shape[0], X.shape[1], 1))
         
-        # Faz previsões
         predictions = self.model.predict(X, verbose=0)
         
-        # Desnormaliza
         y_actual = self.scaler.inverse_transform(y.reshape(-1, 1))
         y_pred = self.scaler.inverse_transform(predictions)
         
-        # Calcula métricas
         mse = mean_squared_error(y_actual, y_pred)
         mae = mean_absolute_error(y_actual, y_pred)
         mape = mean_absolute_percentage_error(y_actual, y_pred)
@@ -265,13 +233,10 @@ class StockPredictor:
         if not self.is_trained:
             raise ValueError("Modelo não foi treinado ainda!")
         
-        # Cria diretório se não existir
         os.makedirs(os.path.dirname(filepath), exist_ok=True)
         
-        # Salva o modelo Keras
         self.model.save(f"{filepath}_model.keras")
         
-        # Salva o scaler e outros parâmetros
         model_data = {
             'scaler': self.scaler,
             'sequence_length': self.sequence_length,
@@ -290,10 +255,8 @@ class StockPredictor:
         """
         from tensorflow.keras.models import load_model
         
-        # Carrega o modelo Keras
         self.model = load_model(f"{filepath}_model.keras")
         
-        # Carrega dados auxiliares
         model_data = joblib.load(f"{filepath}_data.pkl")
         
         self.scaler = model_data['scaler']

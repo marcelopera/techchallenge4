@@ -14,7 +14,6 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
-# Métricas Prometheus
 request_count = Counter('flask_requests_total', 'Total requests', ['method', 'endpoint', 'status'])
 request_duration = Histogram('flask_request_duration_seconds', 'Request duration', ['method', 'endpoint'])
 active_requests = Gauge('flask_active_requests', 'Active requests')
@@ -27,9 +26,7 @@ loaded_models = {}
 
 class StockPredictionAPI:
     def __init__(self, models_dir="models"):
-        """
-        Inicializa a API de previsão de ações
-        """
+        """Inicializa a API de previsão de ações"""
         self.models_dir = models_dir
         self.ensure_models_dir()
         self.update_system_metrics()
@@ -46,9 +43,7 @@ class StockPredictionAPI:
             os.makedirs(self.models_dir)
     
     def load_model_for_ticker(self, ticker):
-        """
-        Carrega o modelo para um ticker específico
-        """
+        """Carrega o modelo para um ticker específico"""
         model_path = os.path.join(self.models_dir, f"{ticker.lower()}_model")
         
         if not os.path.exists(f"{model_path}_model.keras"):
@@ -65,9 +60,7 @@ class StockPredictionAPI:
         return loaded_models[ticker]
     
     def get_prediction(self, ticker, days=5):
-        """
-        Obtém previsão para um ticker
-        """
+        """Obtém previsão para um ticker"""
         try:
             predictor = self.load_model_for_ticker(ticker)
             predictions = predictor.predict_next_days(days)
@@ -105,16 +98,12 @@ class StockPredictionAPI:
             raise e
     
     def get_manual_prediction(self, ticker, dates, prices, predict_days=5):
-        """
-        Obtém previsão baseada em dados inseridos manualmente
-        """
+        """Obtém previsão baseada em dados inseridos manualmente"""
         try:
             predictor = self.load_model_for_ticker(ticker)
             
-            # Usa a função do modelo para previsão manual
             result = predictor.predict_from_manual_data(dates, prices, predict_days)
             
-            # Formata o resultado para a API
             api_result = {
                 'ticker': ticker,
                 'input_data': [
@@ -155,7 +144,6 @@ class StockPredictionAPI:
 
 prediction_api = StockPredictionAPI()
 
-# Middleware para métricas
 @app.before_request
 def before_request():
     request.start_time = time.time()
@@ -194,15 +182,7 @@ def health_check():
 
 @app.route('/predict/<ticker>', methods=['GET'])
 def predict_stock(ticker):
-    """
-    Endpoint para obter previsões de um ticker
-    
-    Args:
-        ticker (str): Símbolo da ação
-        
-    Query Parameters:
-        days (int): Número de dias para prever (padrão: 5)
-    """
+    """Endpoint para obter previsões de um ticker"""
     try:
         ticker = ticker.upper()
         days = int(request.args.get('days', 5))
@@ -230,31 +210,23 @@ def predict_stock(ticker):
 
 @app.route('/predict-manual/<ticker>', methods=['POST'])
 def predict_stock_manual(ticker):
-    """
-    Endpoint para obter previsões baseadas em dados inseridos manualmente
-    
-    Args:
-        ticker (str): Símbolo da ação
-        
-    JSON Body:
+    """Endpoint para obter previsões baseadas em dados inseridos manualmente
         {
             "dates": ["2024-01-15", "2024-01-16", ...],
             "prices": [185.50, 187.20, ...],
-            "predict_days": 5  // opcional, padrão: 5
+            "predict_days": 5  // opadrão: 5
         }
     """
     try:
         ticker = ticker.upper()
-        
-        # Valida se é uma requisição JSON
+
         if not request.is_json:
             return jsonify({
                 'error': 'Content-Type deve ser application/json'
             }), 400
         
         data = request.get_json()
-        
-        # Valida campos obrigatórios
+
         if 'dates' not in data or 'prices' not in data:
             return jsonify({
                 'error': 'Campos obrigatórios: dates, prices',
@@ -269,7 +241,6 @@ def predict_stock_manual(ticker):
         prices = data['prices']
         predict_days = data.get('predict_days', 5)
         
-        # Validações
         if not isinstance(dates, list) or not isinstance(prices, list):
             return jsonify({
                 'error': 'dates e prices devem ser listas'
@@ -280,7 +251,7 @@ def predict_stock_manual(ticker):
                 'error': 'Número de datas deve ser igual ao número de preços'
             }), 400
         
-        if len(dates) < 10:  # Assumindo sequence_length padrão de 10
+        if len(dates) < 10:
             return jsonify({
                 'error': 'Necessário pelo menos 10 pontos de dados para fazer previsões'
             }), 400
@@ -290,7 +261,6 @@ def predict_stock_manual(ticker):
                 'error': 'predict_days deve estar entre 1 e 30'
             }), 400
         
-        # Valida formato das datas
         try:
             for date_str in dates:
                 datetime.strptime(date_str, '%Y-%m-%d')
@@ -299,15 +269,13 @@ def predict_stock_manual(ticker):
                 'error': 'Formato de data inválido. Use YYYY-MM-DD'
             }), 400
         
-        # Valida se os preços são números
         try:
             prices = [float(price) for price in prices]
         except (ValueError, TypeError):
             return jsonify({
                 'error': 'Todos os preços devem ser números válidos'
             }), 400
-        
-        # Faz a previsão
+
         result = prediction_api.get_manual_prediction(ticker, dates, prices, predict_days)
         return jsonify(result)
         

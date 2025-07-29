@@ -54,7 +54,10 @@ def train_models_for_tickers(df, tickers, epochs=100):
     return results
 
 def main():
-    """Função principal"""
+    """
+    Função principal
+    """
+    
     print("Iniciando treinamento de modelos de previsão de ações")
     print("=" * 60)
     

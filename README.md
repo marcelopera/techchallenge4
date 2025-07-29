@@ -26,7 +26,7 @@ python stock_script.py
 docker-compose up -d
 
 # 4. Subir a API
-gunicorn --config gunicorn.conf.py app:app
+gunicorn --config gunicorn.conf.py stock_api:app
 ```
 
 ## Arquitetura
@@ -294,8 +294,8 @@ Retorna métricas no formato Prometheus para monitoramento.
 
 | Métrica | Tipo | Descrição |
 |---------|------|-----------|
-| `flask_requests_total` | Counter | Total de requisições por endpoint/status |
-| `flask_request_duration_seconds` | Histogram | Duração das requisições |
+| `flask_http_requests_total` | Counter | Total de requisições por endpoint/status |
+| `flask_http_request_duration_seconds` | Histogram | Duração das requisições |
 | `flask_active_requests` | Gauge | Número de requisições ativas |
 | `flask_memory_usage_bytes` | Gauge | Uso de memória em bytes |
 | `flask_cpu_usage_percent` | Gauge | Uso de CPU em percentual |
